@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>نصر البركاتي - المساعد القانوني</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --gold: #B8952A;
+    --gold-light: #D4AF4A;
+    --gold-pale: #F5EDD0;
+    --navy: #1B2E5A;
+    --navy-light: #2A4080;
+    --navy-pale: #E8EDF8;
+    --bg: #F8F6F0;
+    --white: #FFFFFF;
+    --text: #1a1a1a;
+    --text-muted: #666;
+    --border: rgba(184,149,42,0.2);
+  }
+  body { font-family: 'Tajawal', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; direction: rtl; }
+  .header {
+    background: var(--navy);
+    padding: 0 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 70px;
+    border-bottom: 2px solid var(--gold);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo-area { display: flex; align-items: center; gap: 14px; }
+  .logo-circle {
+    width: 46px; height: 46px;
+    background: var(--white);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .firm-name { color: var(--white); font-size: 18px; font-weight: 700; }
+  .firm-sub { color: var(--gold-light); font-size: 11px; font-weight: 300; margin-top: 1px; }
+  .header-badge {
+    background: rgba(184,149,42,0.15);
+    border: 1px solid var(--gold);
+    color: var(--gold-light);
+    font-size: 12px;
+    padding: 5px 14px;
+    border-radius: 20px;
+  }
+  .main { max-width: 900px; margin: 0 auto; padding: 2rem 1.5rem; }
+  .welcome-banner {
+    background: var(--navy);
+    border-radius: 16px;
+    padding: 2rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid var(--gold);
+  }
+  .welcome-title { color: var(--gold-light); font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .welcome-desc { color: rgba(255,255,255,0.75); font-size: 14px; line-height: 1.6; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 1.5rem; flex-wrap: wrap; }
+  .tab {
+    padding: 9px 20px;
+    border-radius: 30px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1.5px solid transparent;
+    transition: all 0.2s;
+    font-family: 'Tajawal', sans-serif;
+    background: var(--white);
+    color: var(--navy);
+    border-color: var(--border);
+  }
+  .tab.active { background: var(--navy); color: var(--white); border-color: var(--navy); }
+  .tab:hover:not(.active) { border-color: var(--gold); color: var(--gold); }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .chat-container { background: var(--white); border-radius: 16px; border: 1px solid var(--border); overflow: hidden; }
+  .chat-messages { height: 460px; overflow-y: auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
+  .msg { max-width: 85%; border-radius: 14px; padding: 12px 16px; font-size: 14px; line-height: 1.7; }
+  .msg.user { background: var(--navy); color: var(--white); align-self: flex-start; border-bottom-right-radius: 4px; }
+  .msg.ai { background: var(--gold-pale); color: var(--text); align-self: flex-end; border-bottom-left-radius: 4px; border: 1px solid rgba(184,149,42,0.25); }
+  .msg.ai .source-tag {
+    display: inline-block;
+    background: var(--navy);
+    color: var(--gold-light);
+    font-size: 11px;
+    padding: 2px 10px;
+    border-radius: 20px;
+    margin-top: 8px;
+  }
+  .msg.thinking { background: var(--navy-pale); color: var(--text-muted); align-self: flex-end; font-size: 13px; }
+  .thinking-dots span { display: inline-block; animation: dot 1.4s infinite; font-size: 20px; line-height: 1; }
+  .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes dot { 0%,80%,100% { opacity:0.2; transform:scale(0.8); } 40% { opacity:1; transform:scale(1); } }
+  .chat-input-area { padding: 1rem 1.5rem; border-top: 1px solid var(--border); display: flex; gap: 10px; align-items: flex-end; }
+  .chat-input {
+    flex: 1;
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 16px;
+    font-size: 14px;
+    font-family: 'Tajawal', sans-serif;
+    resize: none;
+    outline: none;
+    min-height: 48px;
+    max-height: 120px;
+    direction: rtl;
+    color: var(--text);
+    background: var(--bg);
+  }
+  .chat-input:focus { border-color: var(--gold); }
+  .send-btn {
+    background: var(--navy);
+    color: var(--white);
+    border: none;
+    border-radius: 12px;
+    width: 48px; height: 48px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+  .send-btn:hover { background: var(--navy-light); }
+  .send-btn:disabled { background: #ccc; cursor: not-allowed; }
+  .upload-zone {
+    border: 2px dashed var(--gold);
+    border-radius: 16px;
+    padding: 3rem 2rem;
+    text-align: center;
+    background: var(--gold-pale);
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 1.5rem;
+  }
+  .upload-zone:hover { background: rgba(184,149,42,0.12); }
+  .upload-icon { font-size: 48px; margin-bottom: 12px; }
+  .upload-title { font-size: 18px; font-weight: 700; color: var(--navy); margin-bottom: 6px; }
+  .upload-sub { font-size: 13px; color: var(--text-muted); }
+  .file-list { display: flex; flex-direction: column; gap: 8px; }
+  .file-item { background: var(--white); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; font-size: 14px; }
+  .file-icon { width: 36px; height: 36px; background: var(--navy); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--gold-light); font-size: 12px; font-weight: 700; flex-shrink: 0; }
+  .file-info { flex: 1; }
+  .file-name { font-weight: 500; color: var(--navy); }
+  .file-size { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .file-status { font-size: 12px; padding: 3px 10px; border-radius: 20px; }
+  .file-status.ready { background: #E8F5E9; color: #2E7D32; }
+  .file-status.loading { background: var(--navy-pale); color: var(--navy); }
+  .hidden-input { display: none; }
+  .info-box { background: var(--navy-pale); border: 1px solid rgba(27,46,90,0.15); border-radius: 12px; padding: 14px 16px; font-size: 13px; color: var(--navy); margin-bottom: 1rem; line-height: 1.6; }
+  .api-setup { background: var(--white); border-radius: 16px; border: 1px solid var(--border); padding: 1.5rem; margin-bottom: 1rem; }
+  .api-setup label { display: block; font-size: 13px; font-weight: 500; color: var(--navy); margin-bottom: 8px; }
+  .api-input { width: 100%; border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 14px; font-size: 14px; font-family: 'Tajawal', sans-serif; direction: ltr; text-align: left; outline: none; color: var(--text); background: var(--bg); }
+  .api-input:focus { border-color: var(--gold); }
+  .save-btn { margin-top: 12px; background: var(--gold); color: var(--white); border: none; border-radius: 10px; padding: 10px 24px; font-size: 14px; font-weight: 500; cursor: pointer; font-family: 'Tajawal', sans-serif; transition: background 0.2s; }
+  .save-btn:hover { background: var(--gold-light); }
+  .status-msg { font-size: 12px; margin-top: 8px; color: #2E7D32; }
+  .section-title { font-size: 15px; font-weight: 700; color: var(--navy); margin-bottom: 1rem; display: flex; align-items: center; gap: 8px; }
+  .divider { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
+  .delete-btn { background: none; border: none; color: #c00; cursor: pointer; font-size: 16px; padding: 4px; }
+  .history-list { display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
+  .history-item { background: var(--white); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--navy); transition: background 0.15s; }
+  .history-item:hover { background: var(--gold-pale); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo-area">
+    <div class="logo-circle">
+      <svg width="30" height="30" viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <polygon points="22,18 30,10 38,18 30,26" fill="#B8952A"/>
+        <polygon points="30,26 38,18 46,26 38,34" fill="#B8952A" opacity="0.7"/>
+        <polyline points="10,42 22,32 30,40 38,32 50,42" stroke="#1B2E5A" stroke-width="5" fill="none" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div>
+      <div class="firm-name">نصر البركاتي</div>
+      <div class="firm-sub">للمحاماة والاستشارات القانونية</div>
+    </div>
+  </div>
+  <div class="header-badge">المساعد القانوني الذكي</div>
+</div>
+
+<div class="main">
+  <div class="welcome-banner">
+    <div class="welcome-title">مرحباً بك في المساعد القانوني</div>
+    <div class="welcome-desc">اسأل عن أي مادة قانونية، وسيجيبك النظام من ملفات القوانين السعودية فقط مع ذكر المصدر والمادة.</div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('chat')">💬 الاستشارة القانونية</div>
+    <div class="tab" onclick="switchTab('upload')">📁 رفع ملفات القوانين</div>
+    <div class="tab" onclick="switchTab('settings')">⚙️ الإعدادات</div>
+  </div>
+
+  <div class="panel active" id="tab-chat">
+    <div class="chat-container">
+      <div class="chat-messages" id="chatMessages">
+        <div class="msg ai">
+          مرحباً! أنا المساعد القانوني لمكتب نصر البركاتي. يمكنني الإجابة على استفساراتك القانونية من ملفات القوانين السعودية المرفوعة فقط. كيف يمكنني مساعدتك؟
+        </div>
+      </div>
+      <div class="chat-input-area">
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+        <textarea class="chat-input" id="chatInput" placeholder="اكتب سؤالك القانوني هنا..." rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="tab-upload">
+    <div class="info-box">
+      ارفع ملفات القوانين السعودية بصيغة PDF أو TXT. سيقوم النظام بقراءتها وتخزينها للرجوع إليها عند الإجابة على الاستفسارات. الملفات تُحفظ في المتصفح.
+    </div>
+    <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+      <div class="upload-icon">📄</div>
+      <div class="upload-title">اضغط لرفع ملف القانون</div>
+      <div class="upload-sub">يدعم ملفات PDF و TXT • يمكن رفع عدة ملفات</div>
+    </div>
+    <input type="file" class="hidden-input" id="fileInput" accept=".pdf,.txt" multiple onchange="handleFiles(this.files)">
+    <div class="section-title">📚 الملفات المرفوعة (<span id="fileCount">0</span>)</div>
+    <div class="file-list" id="fileList">
+      <div style="text-align:center; color:var(--text-muted); font-size:14px; padding:2rem;" id="emptyMsg">لا توجد ملفات مرفوعة بعد</div>
+    </div>
+  </div>
+
+  <div class="panel" id="tab-settings">
+    <div class="api-setup">
+      <div class="section-title">🔑 إعداد Gemini API Key</div>
+      <label>أدخل الـ API Key الخاص بك من Google AI Studio</label>
+      <input type="password" class="api-input" id="apiKeyInput" placeholder="AIza..." />
+      <br>
+      <button class="save-btn" onclick="saveApiKey()">حفظ المفتاح</button>
+      <div class="status-msg" id="apiStatus"></div>
+    </div>
+    <hr class="divider">
+    <div class="api-setup">
+      <div class="section-title">ℹ️ معلومات النظام</div>
+      <div style="font-size:14px; color:var(--text-muted); line-height:2.2;">
+        <div>🏢 المكتب: نصر البركاتي للمحاماة</div>
+        <div>🤖 النموذج: Gemini 2.0 Flash</div>
+        <div>📋 الملفات المرفوعة: <span id="fileCountSettings">0</span></div>
+        <div>🔒 النظام يجيب من ملفاتك فقط</div>
+        <div>💾 الملفات محفوظة في المتصفح</div>
+      </div>
+    </div>
+    <hr class="divider">
+    <div class="api-setup">
+      <div class="section-title" style="color:#c00;">⚠️ منطقة الخطر</div>
+      <button class="save-btn" style="background:#c00;" onclick="clearAll()">مسح جميع البيانات والملفات</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let uploadedFiles = JSON.parse(localStorage.getItem('legal_files') || '[]');
+  let apiKey = localStorage.getItem('gemini_key') || '';
+  let conversationHistory = [];
+
+  if (apiKey) {
+    document.getElementById('apiKeyInput').value = apiKey;
+    document.getElementById('apiStatus').textContent = '✓ المفتاح محفوظ';
+  }
+
+  function updateFileCounts() {
+    const c = uploadedFiles.length;
+    document.getElementById('fileCount').textContent = c;
+    document.getElementById('fileCountSettings').textContent = c;
+  }
+
+  function renderFileList() {
+    const list = document.getElementById('fileList');
+    const empty = document.getElementById('emptyMsg');
+    if (uploadedFiles.length === 0) {
+      list.innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:14px;padding:2rem;" id="emptyMsg">لا توجد ملفات مرفوعة بعد</div>';
+      return;
+    }
+    list.innerHTML = uploadedFiles.map((f,i) => `
+      <div class="file-item">
+        <div class="file-icon">PDF</div>
+        <div class="file-info">
+          <div class="file-name">${f.name}</div>
+          <div class="file-size">${f.size}</div>
+        </div>
+        <div class="file-status ready">جاهز ✓</div>
+        <button class="delete-btn" onclick="deleteFile(${i})" title="حذف">🗑</button>
+      </div>`).join('');
+    updateFileCounts();
+  }
+
+  renderFileList();
+  updateFileCounts();
+
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    const tabs = ['chat','upload','settings'];
+    document.querySelectorAll('.tab')[tabs.indexOf(name)].classList.add('active');
+    document.getElementById('tab-' + name).classList.add('active');
+  }
+
+  function saveApiKey() {
+    const key = document.getElementById('apiKeyInput').value.trim();
+    if (!key) return;
+    apiKey = key;
+    localStorage.setItem('gemini_key', key);
+    document.getElementById('apiStatus').textContent = '✓ تم حفظ المفتاح بنجاح';
+  }
+
+  function deleteFile(i) {
+    uploadedFiles.splice(i, 1);
+    localStorage.setItem('legal_files', JSON.stringify(uploadedFiles));
+    renderFileList();
+  }
+
+  function clearAll() {
+    if (confirm('هل أنت متأكد من مسح جميع البيانات؟')) {
+      localStorage.clear();
+      uploadedFiles = [];
+      apiKey = '';
+      document.getElementById('apiKeyInput').value = '';
+      document.getElementById('apiStatus').textContent = '';
+      renderFileList();
+    }
+  }
+
+  function handleFiles(files) {
+    const empty = document.getElementById('emptyMsg');
+    if (empty) empty.remove();
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const entry = {
+          name: file.name,
+          size: (file.size/1024).toFixed(1) + ' كيلوبايت',
+          content: e.target.result.substring(0, 15000)
+        };
+        uploadedFiles.push(entry);
+        localStorage.setItem('legal_files', JSON.stringify(uploadedFiles));
+        renderFileList();
+      };
+      reader.readAsText(file, 'UTF-8');
+    });
+  }
+
+  function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  }
+
+  function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  }
+
+  function appendMsg(text, type) {
+    const box = document.getElementById('chatMessages');
+    const div = document.createElement('div');
+    div.className = 'msg ' + type;
+    if (type === 'thinking') {
+      div.innerHTML = '<span class="thinking-dots"><span>•</span><span>•</span><span>•</span></span> جاري البحث في القوانين...';
+    } else {
+      div.innerHTML = text;
+    }
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+    return div;
+  }
+
+  async function sendMessage() {
+    const input = document.getElementById('chatInput');
+    const q = input.value.trim();
+    if (!q) return;
+    if (!apiKey) { alert('يرجى إدخال Gemini API Key في الإعدادات أولاً'); switchTab('settings'); return; }
+    if (uploadedFiles.length === 0) { alert('يرجى رفع ملفات القوانين أولاً من تبويب "رفع ملفات القوانين"'); switchTab('upload'); return; }
+
+    input.value = '';
+    input.style.height = 'auto';
+    document.getElementById('sendBtn').disabled = true;
+    appendMsg(q, 'user');
+    const thinking = appendMsg('', 'thinking');
+
+    conversationHistory.push({ role: 'user', parts: [{ text: q }] });
+
+    const filesContext = uploadedFiles.map(f => `=== ملف: ${f.name} ===\n${f.content}`).join('\n\n');
+
+    const systemPrompt = `أنت مساعد قانوني متخصص لمكتب "نصر البركاتي للمحاماة والاستشارات القانونية".
+
+قواعد صارمة يجب الالتزام بها:
+1. أجب فقط من محتوى الملفات القانونية المقدمة أدناه. لا تستخدم أي معلومات خارجية.
+2. إذا لم يكن الموضوع مذكوراً في الملفات، قل بوضوح: "لا تتوفر معلومات عن هذا الموضوع في ملفات القوانين المرفوعة."
+3. اذكر دائماً اسم الملف والمادة القانونية التي استندت إليها.
+4. كن دقيقاً ومختصراً ومهنياً.
+5. استخدم اللغة العربية الفصحى.
+6. لا تخترع أو تكمل معلومات غير موجودة في الملفات.
+
+محتوى ملفات القوانين:
+${filesContext}`;
+
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: systemPrompt }] },
+          contents: conversationHistory
+        })
+      });
+      const data = await res.json();
+      thinking.remove();
+      if (data.candidates && data.candidates[0]) {
+        const txt = data.candidates[0].content.parts[0].text;
+        conversationHistory.push({ role: 'model', parts: [{ text: txt }] });
+        if (conversationHistory.length > 20) conversationHistory = conversationHistory.slice(-20);
+        const formatted = txt.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        appendMsg(formatted + '<br><span class="source-tag">🔍 مستند من ملفات القوانين</span>', 'ai');
+      } else if (data.error) {
+        appendMsg('⚠️ خطأ: ' + (data.error.message || 'تحقق من الـ API Key'), 'ai');
+      }
+    } catch(err) {
+      thinking.remove();
+      appendMsg('⚠️ تعذر الاتصال. تحقق من الإنترنت والـ API Key.', 'ai');
+    }
+    document.getElementById('sendBtn').disabled = false;
+  }
+</script>
+</body>
+</html>
