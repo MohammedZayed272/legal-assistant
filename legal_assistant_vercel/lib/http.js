@@ -100,14 +100,18 @@ export function htmlToText(html) {
 
 export function normalizeArabic(input) {
   return String(input || '')
+    .normalize('NFKC')
     .toLowerCase()
-    .replace(/[\u064B-\u065F\u0670]/g, '')
+    .replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/g, '')
+    .replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '')
     .replace(/\u0640/g, '')
     .replace(/[إأآٱ]/g, 'ا')
     .replace(/ى/g, 'ي')
     .replace(/ؤ/g, 'و')
     .replace(/ئ/g, 'ي')
     .replace(/ة/g, 'ه')
+    .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+    .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
 }

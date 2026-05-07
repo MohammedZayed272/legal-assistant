@@ -149,10 +149,11 @@ button,input,textarea{font-family:'Tajawal',system-ui,sans-serif}
       <div class="welcome" id="wscr">
         <div class="w-icon">⚖️</div>
         <h2>مرحباً في المساعد القانوني</h2>
-        
+        <p>المصادر محفوظة مركزياً في Vercel، والمفتاح محفوظ في السيرفر. أي شخص يفتح الرابط سيجد نفس الملفات والروابط دون إدخال API key.</p>
         <div class="steps">
-         
-          <div class="step"><div class="step-n">1</div>المساعد يجيب فقط من المصادر المحفوظة</div>
+          <div class="step"><div class="step-n">١</div>ارفع المصادر مرة واحدة من وضع الإدارة</div>
+          <div class="step"><div class="step-n">٢</div>شارك رابط Vercel مع العملاء أو الفريق</div>
+          <div class="step"><div class="step-n">٣</div>المساعد يجيب فقط من المصادر المحفوظة</div>
         </div>
       </div>
     </div>
@@ -322,17 +323,70 @@ function formatFileSize(bytes){
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 }
 
+function hasArabic(text){
+  return /[\u0600-\u06FF]/.test(String(text || ''));
+}
+
+function normalizePdfPiece(text){
+  return String(text || '')
+    .normalize('NFKC')
+    .replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '')
+    .replace(/\u0640/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractPageText(content){
+  const items = (content.items || [])
+    .map((item) => ({
+      text: normalizePdfPiece(item.str),
+      x: item.transform ? item.transform[4] : 0,
+      y: item.transform ? item.transform[5] : 0,
+      dir: item.dir || ''
+    }))
+    .filter((item) => item.text);
+
+  const rawOrder = items.map((item) => item.text).join(' ');
+  const lineGroups = [];
+
+  for (const item of items) {
+    let group = lineGroups.find((line) => Math.abs(line.y - item.y) <= 3);
+    if (!group) {
+      group = { y: item.y, items: [] };
+      lineGroups.push(group);
+    }
+    group.items.push(item);
+  }
+
+  const lineOrder = lineGroups
+    .sort((a, b) => b.y - a.y)
+    .map((line) => {
+      const rtlCount = line.items.filter((item) => item.dir === 'rtl' || hasArabic(item.text)).length;
+      const isRtl = rtlCount >= Math.max(1, line.items.length / 2);
+      const sorted = line.items.sort((a, b) => isRtl ? b.x - a.x : a.x - b.x);
+      return sorted.map((item) => item.text).join(' ');
+    })
+    .filter(Boolean)
+    .join('\n');
+
+  if (!lineOrder) return rawOrder;
+  if (rawOrder && rawOrder !== lineOrder) {
+    return `${lineOrder}\n\n[استخراج بديل للبحث]\n${rawOrder}`;
+  }
+  return lineOrder;
+}
+
 async function extractTextFromFile(file){
   if (file.name.toLowerCase().endsWith('.pdf')) {
     if (!window.pdfjsLib) throw new Error('تعذر تحميل قارئ PDF. تحقق من الاتصال بالإنترنت.');
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
     let text = '';
-    const pages = Math.min(pdf.numPages, 100);
+    const pages = Math.min(pdf.numPages, 120);
     for (let pageNo = 1; pageNo <= pages; pageNo++) {
       const page = await pdf.getPage(pageNo);
-      const content = await page.getTextContent();
-      text += `\n\n[صفحة ${pageNo}]\n` + content.items.map((item) => item.str).join(' ');
+      const content = await page.getTextContent({ normalizeWhitespace: true, disableCombineTextItems: false });
+      text += `\n\n[صفحة ${pageNo}]\n` + extractPageText(content);
     }
     if (pdf.numPages > pages) text += `\n\n[تنبيه: تم استخراج أول ${pages} صفحة فقط من أصل ${pdf.numPages}.]`;
     return text.trim();

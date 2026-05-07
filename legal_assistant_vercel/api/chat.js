@@ -2,10 +2,39 @@ import { loadSourcesStore } from '../lib/store.js';
 import { hasPublicAccess, readJson, sendJson, tokenize, cleanText, normalizeArabic, publicSource } from '../lib/http.js';
 
 const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
-const DEFAULT_MAX_CONTEXT_CHARS = 24000;
-const CHUNK_SIZE = 3000;
-const CHUNK_OVERLAP = 450;
-const MAX_CHUNKS = 8;
+const DEFAULT_MAX_CONTEXT_CHARS = 36000;
+const CHUNK_SIZE = 2400;
+const CHUNK_OVERLAP = 650;
+const DEFAULT_MAX_CHUNKS = 12;
+const NEIGHBOR_CHUNKS = 1;
+
+const ARTICLE_WORDS = new Map([
+  [1, 'الاولي'], [2, 'الثانيه'], [3, 'الثالثه'], [4, 'الرابعه'], [5, 'الخامسه'],
+  [6, 'السادسه'], [7, 'السابعه'], [8, 'الثامنه'], [9, 'التاسعه'], [10, 'العاشره'],
+  [11, 'الحاديه عشره'], [12, 'الثانيه عشره'], [13, 'الثالثه عشره'], [14, 'الرابعه عشره'], [15, 'الخامسه عشره'],
+  [16, 'السادسه عشره'], [17, 'السابعه عشره'], [18, 'الثامنه عشره'], [19, 'التاسعه عشره'], [20, 'العشرون'],
+  [21, 'الحاديه والعشرون'], [22, 'الثانيه والعشرون'], [23, 'الثالثه والعشرون'], [24, 'الرابعه والعشرون'], [25, 'الخامسه والعشرون'],
+  [26, 'السادسه والعشرون'], [27, 'السابعه والعشرون'], [28, 'الثامنه والعشرون'], [29, 'التاسعه والعشرون'], [30, 'الثلاثون'],
+  [31, 'الحاديه والثلاثون'], [32, 'الثانيه والثلاثون'], [33, 'الثالثه والثلاثون'], [34, 'الرابعه والثلاثون'], [35, 'الخامسه والثلاثون'],
+  [36, 'السادسه والثلاثون'], [37, 'السابعه والثلاثون'], [38, 'الثامنه والثلاثون'], [39, 'التاسعه والثلاثون'], [40, 'الاربعون'],
+  [50, 'الخمسون'], [60, 'الستون'], [70, 'السبعون'], [80, 'الثمانون'], [90, 'التسعون'], [100, 'المائه']
+]);
+
+const LEGAL_SYNONYMS = new Map([
+  ['ورثه', ['ورثته', 'الورثه', 'وريث', 'ورث']],
+  ['ورثته', ['ورثه', 'الورثه', 'وريث', 'ورث']],
+  ['مستحقه', ['مستحقات', 'مستحق', 'استحقاق', 'المستحقه']],
+  ['المستحقه', ['مستحقه', 'مستحقات', 'مستحق', 'استحقاق']],
+  ['مبالغ', ['المبالغ', 'مبلغ']],
+  ['المبالغ', ['مبالغ', 'مبلغ']],
+  ['ديون', ['ديونا', 'دين']],
+  ['ديونا', ['ديون', 'دين']],
+  ['ممتازه', ['امتياز', 'ممتاز', 'ممتازه']],
+  ['العامل', ['للعامل', 'عامله', 'عمال', 'العمال']],
+  ['للعامل', ['العامل', 'عامله', 'عمال', 'العمال']],
+  ['افلاس', ['الافلاس', 'تصفية', 'تصفيه']],
+  ['تصفيه', ['تصفية', 'افلاس', 'الافلاس']]
+]);
 
 function numberEnv(name, fallback) {
   const value = Number(process.env[name] || fallback);
@@ -20,8 +49,8 @@ function chunkText(text, size = CHUNK_SIZE, overlap = CHUNK_OVERLAP) {
   while (start < cleaned.length) {
     const end = Math.min(start + size, cleaned.length);
     let chunk = cleaned.slice(start, end);
-    const lastBreak = chunk.lastIndexOf('\n');
-    if (lastBreak > size * 0.55 && end < cleaned.length) {
+    const lastBreak = Math.max(chunk.lastIndexOf('\n\n'), chunk.lastIndexOf('\n[صفحة'));
+    if (lastBreak > size * 0.45 && end < cleaned.length) {
       chunk = chunk.slice(0, lastBreak);
     }
     chunks.push(chunk.trim());
@@ -31,67 +60,175 @@ function chunkText(text, size = CHUNK_SIZE, overlap = CHUNK_OVERLAP) {
   return chunks.filter(Boolean);
 }
 
+function reverseArabicWords(input) {
+  return String(input || '').replace(/[\u0600-\u06FF]{3,}/g, (word) => [...word].reverse().join(''));
+}
+
+function compact(text) {
+  return normalizeArabic(text).replace(/\s+/g, '');
+}
+
+function stripArabicAffixes(token) {
+  let value = normalizeArabic(token);
+  if (!value || value.length <= 2) return value;
+  value = value.replace(/^(وال|بال|كال|فال|لل|ال|و|ف|ب|ك|ل)/, '');
+  value = value.replace(/(هما|كما|كم|كن|نا|ها|هم|هن|ه|ة|ات|ون|ين)$/u, '');
+  return value.length >= 3 ? value : normalizeArabic(token);
+}
+
+function addKeyword(set, value) {
+  const normalized = normalizeArabic(value);
+  if (!normalized || normalized.length < 2) return;
+  set.add(normalized);
+  const stem = stripArabicAffixes(normalized);
+  if (stem && stem.length >= 3) set.add(stem);
+  const noSpaces = normalized.replace(/\s+/g, '');
+  if (noSpaces.length >= 4) set.add(noSpaces);
+}
+
+function expandArticleNumbers(question, set) {
+  const normalized = normalizeArabic(question);
+  const articleRequested = /\b(ماده|الماده|المواد)\b/.test(normalized) || /\bم\s*\d+\b/i.test(String(question));
+  const numbers = [...new Set([...normalized.matchAll(/\b\d{1,3}\b/g)].map((match) => Number(match[0])))]
+    .filter((number) => number > 0 && number <= 300);
+  for (const number of numbers) {
+    addKeyword(set, String(number));
+    const words = ARTICLE_WORDS.get(number);
+    if (words) {
+      addKeyword(set, words);
+      addKeyword(set, `الماده ${words}`);
+      addKeyword(set, reverseArabicWords(`المادة ${words}`));
+      if (articleRequested) addKeyword(set, `ةداملا ${reverseArabicWords(words)}`);
+    }
+  }
+}
+
+function buildQuestionKeywords(question) {
+  const set = new Set();
+  for (const token of tokenize(question)) addKeyword(set, token);
+  const normalized = normalizeArabic(question);
+  const words = normalized.split(/\s+/).filter(Boolean);
+  for (let i = 0; i < words.length - 1; i++) {
+    const phrase = `${words[i]} ${words[i + 1]}`;
+    if (phrase.length >= 7) addKeyword(set, phrase);
+  }
+  for (const word of words) {
+    const stem = stripArabicAffixes(word);
+    if (LEGAL_SYNONYMS.has(word)) LEGAL_SYNONYMS.get(word).forEach((item) => addKeyword(set, item));
+    if (LEGAL_SYNONYMS.has(stem)) LEGAL_SYNONYMS.get(stem).forEach((item) => addKeyword(set, item));
+  }
+  expandArticleNumbers(question, set);
+  return [...set].filter((value) => value.length >= 2);
+}
+
 function buildCandidates(sources) {
   const candidates = [];
   for (const source of sources) {
     const chunks = chunkText(source.content || '');
     chunks.forEach((text, index) => {
+      const raw = `${source.name || ''} ${source.url || ''} ${text}`;
+      const normalized = normalizeArabic(raw);
+      const reversedNormalized = normalizeArabic(reverseArabicWords(raw));
+      const searchable = `${normalized} ${reversedNormalized}`;
       candidates.push({
         source,
         index,
         text,
-        normalized: normalizeArabic(`${source.name || ''} ${source.url || ''} ${text}`)
+        normalized: searchable,
+        compact: searchable.replace(/\s+/g, '')
       });
     });
   }
   return candidates;
 }
 
-function scoreCandidate(candidate, questionTokens, normalizedQuestion) {
-  if (!questionTokens.length) return 0;
+function scoreCandidate(candidate, keywords, normalizedQuestion, compactQuestion) {
+  if (!keywords.length) return 0;
   let score = 0;
   const normalized = candidate.normalized;
-  for (const token of questionTokens) {
-    if (normalized.includes(token)) score += token.length >= 5 ? 2 : 1;
+  const compactText = candidate.compact;
+
+  for (const keyword of keywords) {
+    const keyCompact = keyword.replace(/\s+/g, '');
+    if (normalized.includes(keyword)) score += keyword.length >= 6 ? 3 : 1;
+    if (keyCompact.length >= 5 && compactText.includes(keyCompact)) score += 3;
   }
-  const importantPhrases = normalizedQuestion.split(' ').filter((word) => word.length >= 5).slice(0, 12);
-  for (let i = 0; i < importantPhrases.length - 1; i++) {
-    const phrase = `${importantPhrases[i]} ${importantPhrases[i + 1]}`;
-    if (phrase.length > 8 && normalized.includes(phrase)) score += 4;
+
+  const questionWords = normalizedQuestion.split(/\s+/).filter((word) => word.length >= 4).slice(0, 12);
+  for (let i = 0; i < questionWords.length - 1; i++) {
+    const phrase = `${questionWords[i]} ${questionWords[i + 1]}`;
+    const phraseCompact = phrase.replace(/\s+/g, '');
+    if (normalized.includes(phrase)) score += 5;
+    if (phraseCompact.length >= 7 && compactText.includes(phraseCompact)) score += 5;
   }
-  if (normalizeArabic(candidate.source.name || '').split(' ').some((word) => questionTokens.includes(word))) score += 3;
+
+  if (compactQuestion.length >= 10 && compactText.includes(compactQuestion.slice(0, Math.min(36, compactQuestion.length)))) {
+    score += 10;
+  }
+
+  if (normalizeArabic(candidate.source.name || '').split(' ').some((word) => keywords.includes(word))) score += 3;
   return score;
+}
+
+function selectWithNeighbors(scored, maxChunks) {
+  const selectedMap = new Map();
+  const candidatesBySource = new Map();
+  for (const item of scored) {
+    const sourceKey = item.source.id;
+    if (!candidatesBySource.has(sourceKey)) candidatesBySource.set(sourceKey, new Map());
+    candidatesBySource.get(sourceKey).set(item.index, item);
+  }
+
+  for (const item of scored) {
+    if (item.score <= 0 && selectedMap.size) continue;
+    const key = `${item.source.id}:${item.index}`;
+    selectedMap.set(key, item);
+    const sourceChunks = candidatesBySource.get(item.source.id);
+    for (let offset = 1; offset <= NEIGHBOR_CHUNKS; offset++) {
+      const before = sourceChunks.get(item.index - offset);
+      const after = sourceChunks.get(item.index + offset);
+      if (before) selectedMap.set(`${before.source.id}:${before.index}`, before);
+      if (after) selectedMap.set(`${after.source.id}:${after.index}`, after);
+    }
+    if (selectedMap.size >= maxChunks) break;
+  }
+
+  return [...selectedMap.values()]
+    .sort((a, b) => b.score - a.score || String(a.source.name || '').localeCompare(String(b.source.name || ''), 'ar') || a.index - b.index)
+    .slice(0, maxChunks);
 }
 
 function retrieveContext(sources, question) {
   const candidates = buildCandidates(sources);
   const normalizedQuestion = normalizeArabic(question);
-  const questionTokens = [...new Set(tokenize(question))];
+  const compactQuestion = compact(question);
+  const keywords = buildQuestionKeywords(question);
   const maxContextChars = numberEnv('MAX_CONTEXT_CHARS', DEFAULT_MAX_CONTEXT_CHARS);
+  const maxChunks = numberEnv('MAX_RETRIEVED_CHUNKS', DEFAULT_MAX_CHUNKS);
 
   const scored = candidates
     .map((candidate) => ({
       ...candidate,
-      score: scoreCandidate(candidate, questionTokens, normalizedQuestion)
+      score: scoreCandidate(candidate, keywords, normalizedQuestion, compactQuestion)
     }))
     .sort((a, b) => b.score - a.score || a.index - b.index);
 
-  const best = scored.slice(0, MAX_CHUNKS);
-  const fallback = scored.length ? scored.slice(0, Math.min(4, scored.length)) : [];
-  const selected = best.some((item) => item.score > 0) ? best : fallback;
+  const best = scored.some((item) => item.score > 0)
+    ? selectWithNeighbors(scored, maxChunks)
+    : scored.slice(0, Math.min(5, scored.length));
 
   const snippets = [];
   let usedChars = 0;
-  for (const item of selected) {
+  for (const item of best) {
     const label = item.source.type === 'url' ? item.source.url : item.source.name;
-    const block = `[#${snippets.length + 1}] المصدر: ${label}\nنوع المصدر: ${item.source.type}\nالمقتطف:\n${item.text}`;
+    const block = `[#${snippets.length + 1}] المصدر: ${label}\nنوع المصدر: ${item.source.type}\nدرجة المطابقة: ${item.score}\nالمقتطف:\n${item.text}`;
     if (usedChars + block.length > maxContextChars && snippets.length) break;
     snippets.push(block);
     usedChars += block.length;
   }
 
   const usedSourcesById = new Map();
-  selected.forEach((item) => usedSourcesById.set(item.source.id, publicSource(item.source)));
+  best.forEach((item) => usedSourcesById.set(item.source.id, publicSource(item.source)));
 
   return {
     context: snippets.join('\n\n---\n\n'),
@@ -165,6 +302,7 @@ export default async function handler(req, res) {
 4. لا تخترع مواد أو أحكاماً غير موجودة في المقتطفات.
 5. اكتب بالعربية الفصحى وبأسلوب مهني مختصر.
 6. عند وجود أكثر من رأي أو حالة في النص، فرّق بينها ولا تعمم.
+7. إذا كانت بعض الكلمات في المقتطفات مقلوبة بسبب استخراج PDF عربي، فافهمها من سياقها ولا تعتبر ذلك عدم وجود للمعلومة.
 
 المقتطفات المسترجعة من المصادر:
 ${context}`;
@@ -180,7 +318,7 @@ ${context}`;
       },
       body: JSON.stringify({
         model: process.env.ANTHROPIC_MODEL || DEFAULT_MODEL,
-        max_tokens: numberEnv('ANTHROPIC_MAX_TOKENS', 1600),
+        max_tokens: numberEnv('ANTHROPIC_MAX_TOKENS', 1800),
         system,
         messages
       })
