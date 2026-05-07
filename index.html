@@ -150,10 +150,10 @@ body{font-family:'Tajawal',sans-serif;background:var(--bg);color:var(--text);min
     <!-- API -->
     <div class="sb-sec">
       <div class="sb-lbl">⚙️ إعدادات</div>
-      <div class="field-lbl">OpenRouter API Key</div>
-      <input type="password" class="field-input" id="apiKey" placeholder="sk-or-v1-..."/>
+      <div class="field-lbl">Claude API Key</div>
+      <input type="password" class="field-input" id="apiKey" placeholder="sk-ant-..."/>
       <button class="sv-btn" onclick="saveSettings()">💾 حفظ الإعدادات</button>
-      <div class="hint">مجاني من <a href="https://openrouter.ai" target="_blank">openrouter.ai</a> ← Keys ← Create Key</div>
+      <div class="hint">مجاني 100% من <a href="https://aistudio.google.com" target="_blank">aistudio.google.com</a><br>اضغط Get API Key ← Create API Key</div>
     </div>
 
     <div class="sb-footer">
@@ -348,20 +348,32 @@ async function send(){
 ${ctx}`;
 
   try{
-    const res=await fetch('https://openrouter.ai/api/v1/chat/completions',{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+apiKey,'HTTP-Referer':'https://nasr-albarkati.vercel.app','X-Title':'نصر البركاتي القانوني'},
-      body:JSON.stringify({model:'meta-llama/llama-3.3-70b-instruct:free',messages:[{role:'system',content:sys},...history.slice(0,-1),{role:'user',content:q}],max_tokens:1500,temperature:0.1})
+      headers:{
+        'Content-Type':'application/json',
+        'x-api-key':apiKey,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body:JSON.stringify({
+        model:'claude-haiku-4-5-20251001',
+        max_tokens:1500,
+        system:sys,
+        messages:history.slice(0,-1).concat([{role:'user',content:q}])
+      })
     });
     const data=await res.json();
     tw.remove();
-    if(data.choices&&data.choices[0]){
-      const txt=data.choices[0].message.content;
+    if(data.content&&data.content[0]){
+      const txt=data.content[0].text;
       history.push({role:'assistant',content:txt});
       const fmt=txt.replace(/\n\n/g,'</p><p style="margin-top:8px">').replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>');
       addMsg(`<p>${fmt}</p><br><span class="src-tag">🔍 مستند من مصادرك القانونية</span>`,'ai');
+    } else if(data.error){
+      addMsg('⚠️ خطأ: '+(data.error.message||'تحقق من الـ API Key.'),'ai');
     } else {
-      addMsg('⚠️ '+(data.error?.message||'خطأ في الاستجابة. تحقق من الـ API Key.'),'ai');
+      addMsg('⚠️ لم يأتِ رد. تحقق من الـ API Key.','ai');
     }
   }catch(e){
     tw.remove();
