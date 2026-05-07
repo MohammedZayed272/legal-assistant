@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800&display=swap" rel="stylesheet" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -104,7 +105,7 @@ button,input,textarea{font-family:'Tajawal',system-ui,sans-serif}
       </div>
 
       <div class="src-panel active" id="panel-pdf">
-        <div class="upload-zone" id="uploadZone">＋ ارفع ملف PDF أو TXT<br><span class="mini">يُستخرج النص ويحفظ في Vercel Blob</span></div>
+        <div class="upload-zone" id="uploadZone">＋ ارفع ملف PDF أو TXT<br><span class="mini">يُستخرج النص ويحفظ في Vercel Blob — مع دعم OCR للملفات المصورة</span></div>
         <input type="file" id="fi" style="display:none" accept=".pdf,.txt" multiple />
         <div class="files-list" id="filesList"><div class="empty">لا توجد ملفات محفوظة بعد</div></div>
       </div>
@@ -409,13 +410,86 @@ function extractPageText(content){
   return `${lineOrder}\n\n[نسخة_بحث_خام]\n${rawOrder}\n\n[نسخة_بحث_معكوسة]\n${fullyReversed}`;
 }
 
-// معالجة PDF على دفعات لدعم الملفات الكبيرة جداً
+// ── OCR للـ PDF المصوّر: يستخدم Tesseract.js عند عدم وجود نص قابل للاستخراج ──
+const OCR_LANG = 'ara+eng';
+const OCR_RENDER_SCALE = 1.7;
+let ocrWorkerPromise = null;
+let ocrWorker = null;
+
+function shouldOcrPage(pageText){
+  const cleaned = normalizePdfPiece(pageText);
+  if (!cleaned) return true;
+  const arabicChars = (cleaned.match(/[\u0600-\u06FF]/g) || []).length;
+  const latinChars = (cleaned.match(/[A-Za-z]/g) || []).length;
+  // إذا النص قليل جداً أو لا يحتوي عربي تقريباً، غالباً الصفحة صورة وتحتاج OCR
+  return cleaned.length < 45 || (arabicChars < 8 && latinChars < 30);
+}
+
+function ocrLogger(message){
+  if (!message || typeof message.progress !== 'number') return;
+  if (String(message.status || '').includes('recognizing')) {
+    const percent = Math.round(message.progress * 100);
+    if (percent === 25 || percent === 50 || percent === 75 || percent === 100) {
+      toast(`🔎 OCR ${percent}%`);
+    }
+  }
+}
+
+async function getOcrWorker(){
+  if (!window.Tesseract) {
+    throw new Error('تعذر تحميل مكتبة OCR. تأكد من الاتصال بالإنترنت ثم أعد المحاولة.');
+  }
+  if (!ocrWorkerPromise) {
+    ocrWorkerPromise = (async () => {
+      // Tesseract.js v5
+      try {
+        return await Tesseract.createWorker(OCR_LANG, 1, { logger: ocrLogger });
+      } catch (err) {
+        // توافق احتياطي مع الإصدارات الأقدم
+        const worker = await Tesseract.createWorker({ logger: ocrLogger });
+        await worker.loadLanguage(OCR_LANG);
+        await worker.initialize(OCR_LANG);
+        return worker;
+      }
+    })();
+  }
+  ocrWorker = await ocrWorkerPromise;
+  return ocrWorker;
+}
+
+async function terminateOcrWorker(){
+  if (ocrWorker) {
+    try { await ocrWorker.terminate(); } catch (_) {}
+  }
+  ocrWorker = null;
+  ocrWorkerPromise = null;
+}
+
+async function ocrPdfPage(page, pageNo, totalPages){
+  const viewport = page.getViewport({ scale: OCR_RENDER_SCALE });
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  toast(`🔎 قراءة OCR للصفحة ${pageNo}/${totalPages}...`);
+  const worker = await getOcrWorker();
+  const result = await worker.recognize(canvas);
+
+  // تحرير الذاكرة بعد كل صفحة
+  canvas.width = 0;
+  canvas.height = 0;
+
+  return normalizePdfPiece(result?.data?.text || '');
+}
+
+// معالجة PDF مع OCR عند الحاجة
 async function extractTextFromFile(file){
   if (file.name.toLowerCase().endsWith('.pdf')) {
     if (!window.pdfjsLib) throw new Error('تعذر تحميل قارئ PDF. تحقق من الاتصال بالإنترنت.');
     const arrayBuffer = await file.arrayBuffer();
 
-    // إعدادات محسّنة لـ PDF العربي
     const loadingTask = pdfjsLib.getDocument({
       data: arrayBuffer,
       cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
@@ -426,38 +500,59 @@ async function extractTextFromFile(file){
 
     const pdf = await loadingTask.promise;
     const totalPages = pdf.numPages;
-    let text = '';
-    // رفعنا الحد من 120 إلى 500 صفحة
     const maxPages = Math.min(totalPages, 500);
+    let text = '';
+    let ocrUsed = 0;
 
-    // معالجة على دفعات من 20 صفحة لتجنب تجميد المتصفح
-    const BATCH = 20;
-    for (let start = 1; start <= maxPages; start += BATCH) {
-      const end = Math.min(start + BATCH - 1, maxPages);
-      const batchPromises = [];
-      for (let pageNo = start; pageNo <= end; pageNo++) {
-        batchPromises.push(
-          pdf.getPage(pageNo).then(async (page) => {
-            const content = await page.getTextContent({
-              normalizeWhitespace: false,
-              disableCombineTextItems: true,
-              includeMarkedContent: false
-            });
-            return `\n\n[صفحة ${pageNo}/${totalPages}]\n` + extractPageText(content);
-          })
-        );
-      }
-      const batchResults = await Promise.all(batchPromises);
-      text += batchResults.join('');
+    try {
+      // معالجة تسلسلية لتجنب تجميد المتصفح واستهلاك الذاكرة أثناء OCR
+      for (let pageNo = 1; pageNo <= maxPages; pageNo++) {
+        const page = await pdf.getPage(pageNo);
+        let pageText = '';
 
-      // إشعار المستخدم بالتقدم
-      if (totalPages > BATCH) {
-        toast(`⏳ جاري استخراج الصفحات ${start}–${end} من ${totalPages}...`);
+        try {
+          const content = await page.getTextContent({
+            normalizeWhitespace: false,
+            disableCombineTextItems: true,
+            includeMarkedContent: false
+          });
+          pageText = extractPageText(content);
+        } catch (_) {
+          pageText = '';
+        }
+
+        if (shouldOcrPage(pageText)) {
+          try {
+            const ocrText = await ocrPdfPage(page, pageNo, totalPages);
+            if (ocrText && ocrText.length > pageText.length) {
+              ocrUsed += 1;
+              pageText = `${ocrText}\n\n[نص_PDF_الأصلي]\n${pageText}`.trim();
+            }
+          } catch (ocrError) {
+            pageText = `${pageText}\n[تعذر OCR للصفحة ${pageNo}: ${ocrError.message || 'خطأ غير معروف'}]`.trim();
+          }
+        }
+
+        text += `\n\n[صفحة ${pageNo}/${totalPages}]\n${pageText}`;
+        if (pageNo % 5 === 0 || pageNo === maxPages) {
+          toast(`⏳ تم استخراج ${pageNo}/${maxPages} صفحة${ocrUsed ? ` — OCR: ${ocrUsed}` : ''}`);
+        }
       }
+    } finally {
+      await terminateOcrWorker();
     }
 
     if (totalPages > maxPages) {
       text += `\n\n[تنبيه: تم استخراج أول ${maxPages} صفحة من أصل ${totalPages}.]`;
+    }
+
+    const usefulText = text.replace(/\[[^\]]+\]/g, '').trim();
+    if (!usefulText || usefulText.length < 20) {
+      throw new Error('لم أستطع استخراج نص من هذا PDF. قد يكون ملفاً مصوراً وتعذر تشغيل OCR. جرّب الاتصال بالإنترنت أو ارفع نسخة نصية.');
+    }
+
+    if (ocrUsed) {
+      text = `[تم استخدام OCR في ${ocrUsed} صفحة من هذا الملف]\n\n${text}`;
     }
     return text.trim();
   }
