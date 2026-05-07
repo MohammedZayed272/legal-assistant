@@ -63,10 +63,14 @@ export function makeId(prefix = 'src') {
 export function publicSource(source) {
   return {
     id: source.id,
+    groupId: source.groupId || source.id,
     type: source.type,
     name: source.name,
+    displayName: source.displayName || source.name,
     url: source.url || '',
     size: source.size || '',
+    part: source.part || 1,
+    parts: source.parts || 1,
     chars: source.content ? source.content.length : 0,
     createdAt: source.createdAt,
     updatedAt: source.updatedAt

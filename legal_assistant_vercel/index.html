@@ -149,9 +149,11 @@ button,input,textarea{font-family:'Tajawal',system-ui,sans-serif}
       <div class="welcome" id="wscr">
         <div class="w-icon">⚖️</div>
         <h2>مرحباً في المساعد القانوني</h2>
-      
+        <p>المصادر محفوظة مركزياً في Vercel، والمفتاح محفوظ في السيرفر. أي شخص يفتح الرابط سيجد نفس الملفات والروابط دون إدخال API key.</p>
         <div class="steps">
-          <div class="step"><div class="step-n">1</div>المساعد يجيب فقط من المصادر المحفوظة</div>
+          <div class="step"><div class="step-n">١</div>ارفع المصادر مرة واحدة من وضع الإدارة</div>
+          <div class="step"><div class="step-n">٢</div>شارك رابط Vercel مع العملاء أو الفريق</div>
+          <div class="step"><div class="step-n">٣</div>المساعد يجيب فقط من المصادر المحفوظة</div>
         </div>
       </div>
     </div>
@@ -175,6 +177,8 @@ if (window.pdfjsLib) {
 
 let sources = [];
 let history = [];
+const UPLOAD_CHUNK_CHARS = 100000;
+const MAX_FILE_CHUNKS = 30;
 let adminPassword = sessionStorage.getItem('nb_admin_password') || '';
 let accessCode = localStorage.getItem('nb_access_code') || '';
 let busy = false;
@@ -286,17 +290,44 @@ async function loadSources(){
   }
 }
 
+
+function groupedSources(list){
+  const map = new Map();
+  for (const source of list) {
+    const key = source.groupId || source.id;
+    if (!map.has(key)) {
+      map.set(key, {
+        ...source,
+        id: key,
+        ids: [],
+        name: source.displayName || source.name,
+        displayName: source.displayName || source.name,
+        chars: 0,
+        parts: 0,
+        partCount: 0
+      });
+    }
+    const item = map.get(key);
+    item.ids.push(source.id);
+    item.chars += Number(source.chars || 0);
+    item.partCount += 1;
+    item.parts = Math.max(item.parts || 0, Number(source.parts || 1));
+    if (!item.createdAt || String(source.createdAt || '') < String(item.createdAt)) item.createdAt = source.createdAt;
+  }
+  return [...map.values()].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+}
+
 function renderSources(){
-  const fileSources = sources.filter((source) => source.type !== 'url');
-  const urlSources = sources.filter((source) => source.type === 'url');
+  const fileSources = groupedSources(sources.filter((source) => source.type !== 'url'));
+  const urlSources = groupedSources(sources.filter((source) => source.type === 'url'));
   const canEdit = Boolean(adminPassword);
 
   $('filesList').innerHTML = fileSources.length ? fileSources.map((source) => `
     <div class="f-row">
       <span>${source.type === 'pdf' ? '📄' : '📝'}</span>
-      <span class="fn2" title="${escapeHtml(source.name)}">${escapeHtml(source.name)}</span>
-      <span class="f-status ${source.type}">${source.chars ? source.chars.toLocaleString('ar-SA') : 0}</span>
-      <button class="fdel" ${canEdit ? '' : 'disabled'} data-delete-source="${escapeHtml(source.id)}">✕</button>
+      <span class="fn2" title="${escapeHtml(source.displayName || source.name)}">${escapeHtml(source.displayName || source.name)}</span>
+      <span class="f-status ${source.type}" title="${source.partCount > 1 ? `مقسّم إلى ${source.partCount} أجزاء` : ''}">${source.chars ? source.chars.toLocaleString('ar-SA') : 0}${source.partCount > 1 ? ` · ${source.partCount}ج` : ''}</span>
+      <button class="fdel" ${canEdit ? '' : 'disabled'} data-delete-group="${escapeHtml(source.id)}">✕</button>
     </div>`).join('') : '<div class="empty">لا توجد ملفات محفوظة بعد</div>';
 
   $('urlsList').innerHTML = urlSources.length ? urlSources.map((source) => `
@@ -304,13 +335,13 @@ function renderSources(){
       <span>🔗</span>
       <span class="uname" title="${escapeHtml(source.url || source.name)}">${escapeHtml((source.url || source.name || '').replace('https://','').slice(0,42))}</span>
       <span class="u-status url">${source.chars ? source.chars.toLocaleString('ar-SA') : 0}</span>
-      <button class="udel" ${canEdit ? '' : 'disabled'} data-delete-source="${escapeHtml(source.id)}">✕</button>
+      <button class="udel" ${canEdit ? '' : 'disabled'} data-delete-group="${escapeHtml(source.id)}">✕</button>
     </div>`).join('') : '<div class="empty">لا توجد روابط محفوظة بعد</div>';
 
   $('srcCount').textContent = `المصادر: ${fileSources.length} ملف · ${urlSources.length} رابط`;
 
-  document.querySelectorAll('[data-delete-source]').forEach((button) => {
-    button.addEventListener('click', () => deleteSource(button.dataset.deleteSource));
+  document.querySelectorAll('[data-delete-group]').forEach((button) => {
+    button.addEventListener('click', () => deleteSourceGroup(button.dataset.deleteGroup));
   });
 }
 
@@ -374,6 +405,30 @@ function extractPageText(content){
   return lineOrder;
 }
 
+
+function splitUploadText(text, chunkSize = UPLOAD_CHUNK_CHARS){
+  const cleaned = String(text || '').trim();
+  if (!cleaned) return [];
+  const chunks = [];
+  for (let start = 0; start < cleaned.length && chunks.length < MAX_FILE_CHUNKS; start += chunkSize) {
+    let end = Math.min(start + chunkSize, cleaned.length);
+    if (end < cleaned.length) {
+      const cut = cleaned.lastIndexOf('
+
+', end);
+      if (cut > start + chunkSize * 0.55) end = cut;
+    }
+    chunks.push(cleaned.slice(start, end).trim());
+    if (end >= cleaned.length) break;
+    start = end - chunkSize;
+  }
+  return chunks.filter(Boolean);
+}
+
+function makeGroupId(prefix = 'file'){
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
 async function extractTextFromFile(file){
   if (file.name.toLowerCase().endsWith('.pdf')) {
     if (!window.pdfjsLib) throw new Error('تعذر تحميل قارئ PDF. تحقق من الاتصال بالإنترنت.');
@@ -398,26 +453,43 @@ async function handleFiles(fileList){
   if (!files.length) return;
   busy = true;
   $('addUrlBtn').disabled = true;
+  const failed = [];
   try {
     for (const file of files) {
-      toast(`جاري استخراج: ${file.name}`);
-      const content = await extractTextFromFile(file);
-      const type = file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'txt';
-      await api('/api/sources', {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'add_text',
-          type,
-          name: file.name,
-          size: formatFileSize(file.size),
-          content
-        })
-      });
-      toast(`✓ تم حفظ ${file.name}`);
+      try {
+        toast(`جاري استخراج: ${file.name}`);
+        const content = await extractTextFromFile(file);
+        const chunks = splitUploadText(content);
+        if (!chunks.length) throw new Error('النص المستخرج من الملف فارغ.');
+        const type = file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'txt';
+        const groupId = makeGroupId(type);
+        for (let i = 0; i < chunks.length; i++) {
+          toast(`حفظ ${file.name} — جزء ${i + 1} من ${chunks.length}`);
+          await api('/api/sources', {
+            method: 'POST',
+            body: JSON.stringify({
+              action: 'add_text',
+              type,
+              groupId,
+              displayName: file.name,
+              name: chunks.length > 1 ? `${file.name} — جزء ${i + 1}/${chunks.length}` : file.name,
+              size: formatFileSize(file.size),
+              part: i + 1,
+              parts: chunks.length,
+              content: chunks[i]
+            })
+          });
+        }
+        toast(`✓ تم حفظ ${file.name}`);
+      } catch(error) {
+        failed.push(`${file.name}: ${error.message || 'تعذر حفظ الملف'}`);
+        toast(`⚠ تعذر حفظ ${file.name}`);
+      }
     }
     await loadSources();
-  } catch(error) {
-    toast(error.message || 'تعذر حفظ الملف');
+    if (failed.length) {
+      alert('لم يتم حفظ بعض الملفات:\n\n' + failed.join('\n'));
+    }
   } finally {
     busy = false;
     $('fi').value = '';
@@ -448,13 +520,13 @@ async function addUrl(){
   }
 }
 
-async function deleteSource(id){
+async function deleteSourceGroup(groupId){
   if (!ensureAdmin()) return;
   if (!confirm('حذف هذا المصدر من كل المستخدمين؟')) return;
   try {
     const data = await api('/api/sources', {
       method:'POST',
-      body: JSON.stringify({action:'delete', id})
+      body: JSON.stringify({action:'delete_group', groupId})
     });
     sources = data.sources || [];
     renderSources();
@@ -541,7 +613,7 @@ async function send(){
     const answer = data.answer || 'لم يصل رد.';
     history.push({role:'assistant', content: answer});
     const sourceTags = (data.usedSources || []).slice(0, 4).map((source) => {
-      const label = source.type === 'url' ? (source.url || source.name) : source.name;
+      const label = source.type === 'url' ? (source.url || source.name) : (source.displayName || source.name);
       return `<span class="src-tag">🔍 ${escapeHtml(String(label || 'مصدر').slice(0, 42))}</span>`;
     }).join('');
     addMsg(`${formatAnswer(answer)}${sourceTags || '<span class="src-tag">🔍 مستند من مصادرك القانونية</span>'}`, 'ai');

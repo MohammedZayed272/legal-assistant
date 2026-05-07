@@ -220,7 +220,7 @@ function retrieveContext(sources, question) {
   const snippets = [];
   let usedChars = 0;
   for (const item of best) {
-    const label = item.source.type === 'url' ? item.source.url : item.source.name;
+    const label = item.source.type === 'url' ? item.source.url : (item.source.displayName || item.source.name);
     const block = `[#${snippets.length + 1}] المصدر: ${label}\nنوع المصدر: ${item.source.type}\nدرجة المطابقة: ${item.score}\nالمقتطف:\n${item.text}`;
     if (usedChars + block.length > maxContextChars && snippets.length) break;
     snippets.push(block);
@@ -228,7 +228,10 @@ function retrieveContext(sources, question) {
   }
 
   const usedSourcesById = new Map();
-  best.forEach((item) => usedSourcesById.set(item.source.id, publicSource(item.source)));
+  best.forEach((item) => {
+    const key = item.source.groupId || item.source.id;
+    if (!usedSourcesById.has(key)) usedSourcesById.set(key, publicSource(item.source));
+  });
 
   return {
     context: snippets.join('\n\n---\n\n'),

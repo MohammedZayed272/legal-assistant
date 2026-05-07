@@ -80,13 +80,18 @@ export default async function handler(req, res) {
       const now = new Date().toISOString();
       const source = {
         id: makeId(type),
+        groupId: cleanText(body.groupId || '').slice(0, 120) || undefined,
         type,
         name: cleanText(body.name || (type === 'pdf' ? 'ملف PDF' : 'ملف نصي')).slice(0, 180),
+        displayName: cleanText(body.displayName || body.name || (type === 'pdf' ? 'ملف PDF' : 'ملف نصي')).slice(0, 180),
         size: cleanText(body.size || '').slice(0, 80),
+        part: Math.max(1, Number(body.part || 1) || 1),
+        parts: Math.max(1, Number(body.parts || 1) || 1),
         content,
         createdAt: now,
         updatedAt: now
       };
+      if (!source.groupId) source.groupId = source.id;
 
       store.sources.unshift(source);
       const saved = await saveSourcesStore(store);
@@ -131,6 +136,22 @@ export default async function handler(req, res) {
       const id = String(body.id || '');
       const before = store.sources.length;
       store.sources = store.sources.filter((source) => source.id !== id);
+      if (store.sources.length === before) {
+        return sendJson(res, 404, { ok: false, error: 'المصدر غير موجود.' });
+      }
+      const saved = await saveSourcesStore(store);
+      return sendJson(res, 200, {
+        ok: true,
+        updatedAt: saved.updatedAt,
+        sources: saved.sources.map(publicSource)
+      });
+    }
+
+    if (action === 'delete_group') {
+      const groupId = String(body.groupId || '').trim();
+      if (!groupId) return sendJson(res, 400, { ok: false, error: 'معرف المجموعة غير موجود.' });
+      const before = store.sources.length;
+      store.sources = store.sources.filter((source) => (source.groupId || source.id) !== groupId);
       if (store.sources.length === before) {
         return sendJson(res, 404, { ok: false, error: 'المصدر غير موجود.' });
       }
